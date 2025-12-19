@@ -12,7 +12,7 @@ Easily install and switch between multiple Meteor versions. Similar to [nvm](htt
 
 ## Installation
 
-### Quick Install (recommended) - *Once repo is public*
+### Quick Install (recommended)
 
 ```bash
 curl -o- https://raw.githubusercontent.com/goodeesh/mvm/main/install.sh | bash
@@ -22,39 +22,7 @@ Or with wget:
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/goodeesh/mvm/main/install.sh | bash
-```
-
-### Manual Installation (works now, even with private repo)
-
-1. Clone the repository:
-```bash
-git clone git@github.com:goodeesh/mvm.git ~/.mvm
-```
-
-2. Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
-```bash
-export MVM_DIR="$HOME/.mvm"
-[ -s "$MVM_DIR/mvm.sh" ] && source "$MVM_DIR/mvm.sh"
-```
-
-3. Restart your terminal or run:
-```bash
-source ~/.zshrc  # or ~/.bashrc
-```
-
-### Local Development Installation
-
-If you're testing locally from a cloned directory:
-
-```bash
-# Create a symlink to your development directory
-mkdir -p ~/.mvm
-ln -s /path/to/mvm/mvm.sh ~/.mvm/mvm.sh
-
-# Add to your shell profile
-export MVM_DIR="$HOME/.mvm"
-[ -s "$MVM_DIR/mvm.sh" ] && source "$MVM_DIR/mvm.sh"
-```
+````
 
 ## Usage
 
@@ -85,7 +53,6 @@ mvm check             # Check if current version matches project
 
 ```bash
 mvm list              # List installed versions
-mvm list-remote       # List available versions
 mvm current           # Show current version
 ```
 
@@ -170,15 +137,6 @@ mvm use 3.0.4
 - Bash or Zsh shell
 - curl (for installation)
 - macOS or Linux
-
-## Uninstalling MVM
-
-1. Remove the MVM directory:
-```bash
-rm -rf ~/.mvm
-```
-
-2. Remove the lines added to your shell profile (`~/.bashrc` or `~/.zshrc`)
 
 ## Contributing
 

@@ -32,7 +32,6 @@ Usage:
   mvm auto                  Auto-detect and switch to project's Meteor version
   mvm check                 Check if current version matches project
   mvm list                  List all installed Meteor versions
-  mvm list-remote           List available Meteor versions to install
   mvm current               Show currently active Meteor version
   mvm uninstall <version>   Remove a specific Meteor version
   mvm which                 Show path to current Meteor installation
@@ -100,26 +99,6 @@ mvm_which() {
     else
         echo "No Meteor version currently active"
     fi
-}
-
-# List available remote versions
-mvm_list_remote() {
-    echo -e "${BLUE}Available Meteor versions:${NC}"
-    echo ""
-    echo "Major versions:"
-    echo "  2.12    - Latest stable Meteor 2.x"
-    echo "  2.13    - Meteor 2.13"
-    echo "  2.13.3  - Meteor 2.13.3"
-    echo "  2.14    - Meteor 2.14"
-    echo "  2.15    - Meteor 2.15"
-    echo "  2.16    - Meteor 2.16"
-    echo "  3.0     - Meteor 3.0"
-    echo "  3.0.1   - Meteor 3.0.1"
-    echo "  3.0.2   - Meteor 3.0.2"
-    echo "  3.0.3   - Meteor 3.0.3"
-    echo "  3.0.4   - Meteor 3.0.4 (latest)"
-    echo ""
-    echo "For complete list, visit: https://docs.meteor.com/changelog.html"
 }
 
 # Install a specific Meteor version
@@ -394,9 +373,6 @@ mvm() {
             ;;
         list|ls)
             mvm_list
-            ;;
-        list-remote|ls-remote)
-            mvm_list_remote
             ;;
         current)
             mvm_current
