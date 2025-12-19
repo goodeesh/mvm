@@ -45,11 +45,6 @@ Examples:
   mvm use 2.12              Switch to Meteor 2.12
   mvm use 3.0.4             Switch to Meteor 3.0.4
   mvm alias default 2.12    Set Meteor 2.12 as default
-
-Notes:
-  - On macOS, Meteor is installed via npm (@meteor-community/meteor)
-  - On Linux, official Meteor installer is used
-  - Versions are stored in: $MVM_VERSIONS
 EOF
 }
 
