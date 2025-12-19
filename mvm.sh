@@ -29,6 +29,8 @@ Meteor Version Manager (MVM)
 Usage:
   mvm install <version>     Install a specific Meteor version (e.g., 2.12, 3.0)
   mvm use <version>         Switch to a specific Meteor version
+  mvm auto                  Auto-detect and switch to project's Meteor version
+  mvm check                 Check if current version matches project
   mvm list                  List all installed Meteor versions
   mvm list-remote           List available Meteor versions to install
   mvm current               Show currently active Meteor version
@@ -312,6 +314,66 @@ _mvm_update_path() {
     fi
 }
 
+# Detect Meteor version from current project
+mvm_detect_version() {
+    local release_file=".meteor/release"
+    if [ -f "$release_file" ]; then
+        # Extract version from METEOR@X.Y.Z format
+        local version=$(cat "$release_file" | sed 's/METEOR@//')
+        echo "$version"
+    fi
+}
+
+# Auto-switch to project's Meteor version
+mvm_auto() {
+    local project_version=$(mvm_detect_version)
+    
+    if [ -z "$project_version" ]; then
+        echo -e "${RED}Not in a Meteor project directory${NC}"
+        echo "No .meteor/release file found"
+        return 1
+    fi
+    
+    local current_version=$(mvm_current_version)
+    
+    if [ "$project_version" = "$current_version" ]; then
+        echo -e "${GREEN}Already using Meteor $project_version${NC}"
+        return 0
+    fi
+    
+    local version_dir="$MVM_VERSIONS/$project_version"
+    
+    if [ ! -d "$version_dir" ]; then
+        echo -e "${YELLOW}Project requires Meteor $project_version (not installed)${NC}"
+        read -p "Install it now? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            mvm_install "$project_version"
+        else
+            return 1
+        fi
+    fi
+    
+    mvm_use "$project_version"
+}
+
+# Check if current version matches project (for warnings)
+mvm_check() {
+    local project_version=$(mvm_detect_version)
+    local current_version=$(mvm_current_version)
+    
+    if [ -z "$project_version" ]; then
+        return 0  # Not in a project, no warning needed
+    fi
+    
+    if [ "$project_version" != "$current_version" ]; then
+        echo -e "${YELLOW}⚠️  Warning: Project requires Meteor $project_version but using $current_version${NC}"
+        echo -e "${YELLOW}   Run 'mvm auto' to switch automatically${NC}"
+        return 1
+    fi
+    return 0
+}
+
 # Main command dispatcher
 mvm() {
     local command=$1
@@ -323,6 +385,12 @@ mvm() {
             ;;
         use)
             mvm_use "$@"
+            ;;
+        auto)
+            mvm_auto
+            ;;
+        check)
+            mvm_check
             ;;
         list|ls)
             mvm_list
