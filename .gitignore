@@ -1,0 +1,19 @@
+# MVM specific
+.mvm/
+versions/
+alias/
+
+# System
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
