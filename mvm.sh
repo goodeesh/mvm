@@ -231,13 +231,18 @@ mvm_use() {
     # Update PATH to use MVM's current version
     _mvm_update_path
     
+    # Clear the shell's command hash so it picks up the new PATH
+    hash -r 2>/dev/null || true
+    
     echo -e "${GREEN}Now using Meteor $version${NC}"
     
-    if command -v meteor >/dev/null 2>&1; then
-        meteor --version
+    # Give a short message instead of failing
+    if [ -x "$MVM_CURRENT/meteor" ]; then
+        # Just verify the symlink works without running it
+        "$MVM_CURRENT/meteor" --version
     else
-        echo -e "${YELLOW}Warning: 'meteor' command not found in PATH${NC}"
-        echo "You may need to restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
+        echo -e "${YELLOW}Warning: Meteor binary not accessible${NC}"
+        echo "Try reloading your shell: source ~/.zshrc (or ~/.bashrc)"
     fi
 }
 
