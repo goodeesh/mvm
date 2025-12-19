@@ -25,18 +25,13 @@ echo ""
 echo " Meteor Version Manager"
 echo -e "${NC}"
 
-# Detect shell
+# Detect user's shell from environment (not the script's shell)
 detect_shell() {
-    if [ -n "$ZSH_VERSION" ]; then
-        echo "zsh"
-    elif [ -n "$BASH_VERSION" ]; then
-        echo "bash"
-    else
-        basename "$SHELL"
-    fi
+    local shell_name=$(basename "$SHELL")
+    echo "$shell_name"
 }
 
-# Get shell profile file
+# Get shell profile file based on user's actual shell
 get_profile() {
     local shell_name=$(detect_shell)
     case "$shell_name" in
@@ -112,9 +107,10 @@ install_mvm() {
 # Configure shell
 configure_shell() {
     local profile=$(get_profile)
+    local shell_name=$(detect_shell)
     
     echo ""
-    echo -e "${BLUE}Configuring shell...${NC}"
+    echo -e "${BLUE}Configuring shell (${YELLOW}${shell_name}${BLUE})...${NC}"
     
     # Check if already configured
     if grep -q "MVM_DIR" "$profile" 2>/dev/null; then
@@ -142,19 +138,20 @@ main() {
     install_mvm
     configure_shell
     
+    # Source the profile to load MVM in the current script session
+    local profile=$(get_profile)
+    if [ -f "$profile" ]; then
+        source "$profile" 2>/dev/null || true
+    fi
+    
     echo ""
     echo -e "${GREEN}✅ MVM installation complete!${NC}"
     echo ""
-    echo "To start using MVM, run:"
+    echo "MVM is ready to use! To start, try:"
     echo ""
-    echo -e "  ${YELLOW}source $(get_profile)${NC}"
-    echo ""
-    echo "Then install a Meteor version:"
-    echo ""
+    echo -e "  ${YELLOW}mvm help${NC}"
     echo -e "  ${YELLOW}mvm install 3.0.4${NC}"
     echo -e "  ${YELLOW}mvm use 3.0.4${NC}"
-    echo ""
-    echo "For help, run: mvm help"
     echo ""
 }
 
