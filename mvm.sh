@@ -655,7 +655,7 @@ _mvm_update_path
 
 # Show brief info on load
 if [ -z "$MVM_SILENT" ]; then
-    local current=$(mvm_current_version)
+    current=$(mvm_current_version)
     if [ -n "$current" ]; then
         echo -e "${GREEN}MVM loaded. Current: Meteor $current${NC}"
     else
