@@ -126,10 +126,12 @@ mvm_validate_meteor_path() {
         return 1
     fi
     
-    # Check for dev_bundle (extracted or tarball) or .meteor directory
+    # Check for dev_bundle (extracted or tarball), .meteor directory, or official bootstrap format
+    # Official bootstrap format has packages/ and package-metadata/ at root
     if [ ! -d "$source_path/dev_bundle" ] && \
        [ ! -d "$source_path/.meteor" ] && \
-       ! ls "$source_path"/dev_bundle*.tar.gz >/dev/null 2>&1; then
+       ! ls "$source_path"/dev_bundle*.tar.gz >/dev/null 2>&1 && \
+       ! ([ -d "$source_path/packages" ] && [ -d "$source_path/package-metadata" ]); then
         echo -e "${YELLOW}Warning: No dev_bundle or .meteor directory found${NC}"
         echo "This may not be a complete Meteor installation"
     fi
@@ -263,7 +265,7 @@ mvm_install_local() {
     local temp_node=""
     
     if [ -f "$version_dir/dev_bundle/bin/node" ]; then
-        # dev_bundle already extracted
+        # dev_bundle already extracted at root
         binary_to_check="$version_dir/dev_bundle/bin/node"
     elif ls "$version_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
         # dev_bundle is compressed, extract just the node binary for checking
@@ -279,10 +281,22 @@ mvm_install_local() {
                 binary_to_check="$temp_node/./bin/node"
             fi
         fi
+    else
+        # Official bootstrap format: node is nested in packages/meteor-tool
+        local node_binary=$(find "$version_dir" -path "*/dev_bundle/bin/node" 2>/dev/null | head -1)
+        if [ -n "$node_binary" ] && [ -f "$node_binary" ]; then
+            binary_to_check="$node_binary"
+        fi
     fi
     
     local compat_warning=""
-    if [ -n "$binary_to_check" ] && command -v file >/dev/null 2>&1; then
+    if [ -z "$binary_to_check" ]; then
+        echo -e "${YELLOW}⚠️  Could not find node binary to verify compatibility${NC}"
+        echo "Installation may not work on your system if architecture doesn't match"
+    elif ! command -v file >/dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  'file' command not available - cannot verify binary compatibility${NC}"
+        echo "Install it with: sudo apt-get install file (Debian/Ubuntu) or sudo yum install file (RHEL/CentOS)"
+    else
         local file_output=$(file "$binary_to_check")
         
         # Check for OS mismatch
@@ -315,6 +329,7 @@ mvm_install_local() {
         echo "Run 'mvm use $version_name' to start using this version"
         # Clean up temp node dir if we extracted one
         [ -n "$temp_node" ] && [ -d "$temp_node" ] && rm -rf "$temp_node"
+        return 0
     fi
 }
 
