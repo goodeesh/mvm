@@ -3,6 +3,7 @@
 ## What We Implemented
 
 Added `--path` flag to `mvm install` that supports:
+
 1. **Community/custom builds** (like Linux ARM64)
 2. **Official bootstrap tarballs** (for offline install)
 3. **Automatic compatibility checking** (prevents installing wrong OS/architecture)
@@ -10,12 +11,14 @@ Added `--path` flag to `mvm install` that supports:
 ## Test Scenario: Ubuntu ARM64 System
 
 ### Prerequisites
+
 - Ubuntu ARM64 system (your OrbStack VM)
 - The ARM64 Linux Meteor tarball: `meteor-2.12-arm64-linux-aarch64.tar.gz`
 
 ### Test Steps
 
 **1. Install MVM on Ubuntu ARM64:**
+
 ```bash
 # In your Ubuntu ARM64 system
 cd ~
@@ -24,6 +27,7 @@ source ~/mvm/mvm.sh
 ```
 
 **2. Install the ARM64 Community Build:**
+
 ```bash
 # Copy the tarball to the Ubuntu system first, or use the path
 mvm install --path ~/owl-wrap/meteor-2.12-arm64-linux-aarch64.tar.gz 2.12-arm64
@@ -36,6 +40,7 @@ mvm install --path ~/owl-wrap/meteor-2.12-arm64-linux-aarch64.tar.gz 2.12-arm64
 ```
 
 **3. Use and Test:**
+
 ```bash
 mvm use 2.12-arm64
 meteor --version
@@ -47,6 +52,7 @@ echo $METEOR_WAREHOUSE_DIR
 ```
 
 **4. Test Compatibility Detection (should REJECT):**
+
 ```bash
 # Download an official macOS tarball and try to install
 curl -L -o /tmp/meteor-macos.tar.gz \
@@ -60,6 +66,7 @@ mvm install --path /tmp/meteor-macos.tar.gz 2.16-wrong
 ```
 
 **5. Test Official Linux Tarball (should ACCEPT):**
+
 ```bash
 # Download official Linux x86_64 - will fail compatibility but test the flow
 curl -L -o /tmp/meteor-linux.tar.gz \
@@ -76,21 +83,22 @@ mvm install --path /tmp/meteor-linux.tar.gz 2.16-x64
 ✅ **Meteor runs**: `meteor --version` works correctly  
 ✅ **Compatibility checking**: Rejects wrong OS/architecture  
 ✅ **Warehouse detection**: `$METEOR_WAREHOUSE_DIR` points to correct location  
-✅ **Multiple versions**: Can switch between versions with `mvm use`  
+✅ **Multiple versions**: Can switch between versions with `mvm use`
 
 ### Expected Behavior Summary
 
-| Action | Expected Result |
-|--------|----------------|
-| Install ARM64 Linux build on ARM64 Linux | ✅ Success |
-| Install macOS build on Linux | ❌ Rejected (incompatible) |
-| Install x86_64 Linux on ARM64 Linux | ❌ Rejected (incompatible) |
-| `meteor --version` after install | ✅ Works correctly |
-| Switch between versions | ✅ Works with `mvm use` |
+| Action                                   | Expected Result            |
+| ---------------------------------------- | -------------------------- |
+| Install ARM64 Linux build on ARM64 Linux | ✅ Success                 |
+| Install macOS build on Linux             | ❌ Rejected (incompatible) |
+| Install x86_64 Linux on ARM64 Linux      | ❌ Rejected (incompatible) |
+| `meteor --version` after install         | ✅ Works correctly         |
+| Switch between versions                  | ✅ Works with `mvm use`    |
 
 ## Structural Differences Explained
 
 ### Official Bootstrap Tarball
+
 ```
 .meteor/
   ├── meteor (symlink)
@@ -100,6 +108,7 @@ mvm install --path /tmp/meteor-linux.tar.gz 2.16-x64
 ```
 
 ### Community ARM64 Build
+
 ```
 meteor-2.12-arm64-linux-aarch64/
   ├── meteor
@@ -115,6 +124,7 @@ meteor-2.12-arm64-linux-aarch64/
 ## Report Results
 
 Please test and report:
+
 - [ ] ARM64 Linux build installs successfully
 - [ ] Meteor commands work correctly
 - [ ] Compatibility checking rejects incompatible binaries
