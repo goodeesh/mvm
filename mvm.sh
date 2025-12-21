@@ -27,23 +27,28 @@ mvm_help() {
 Meteor Version Manager (MVM)
 
 Usage:
-  mvm install <version>     Install a specific Meteor version (e.g., 2.12, 3.0)
-  mvm use <version>         Switch to a specific Meteor version
-  mvm auto                  Auto-detect and switch to project's Meteor version
-  mvm check                 Check if current version matches project
-  mvm list                  List all installed Meteor versions
-  mvm current               Show currently active Meteor version
-  mvm uninstall <version>   Remove a specific Meteor version
-  mvm which                 Show path to current Meteor installation
-  mvm alias <name> <ver>    Create an alias (e.g., mvm alias default 2.12)
-  mvm help                  Show this help message
+  mvm install <version>               Install a specific Meteor version (e.g., 2.12, 3.0)
+  mvm install --path <tarball> <name> Install from local tarball
+  mvm use <version>                   Switch to a specific Meteor version
+  mvm auto                            Auto-detect and switch to project's Meteor version
+  mvm check                           Check if current version matches project
+  mvm list                            List all installed Meteor versions
+  mvm current                         Show currently active Meteor version
+  mvm uninstall <version>             Remove a specific Meteor version
+  mvm which                           Show path to current Meteor installation
+  mvm alias <name> <ver>              Create an alias (e.g., mvm alias default 2.12)
+  mvm help                            Show this help message
 
 Examples:
-  mvm install 2.12          Install Meteor 2.12
-  mvm install 3.0.4         Install Meteor 3.0.4
-  mvm use 2.12              Switch to Meteor 2.12
-  mvm use 3.0.4             Switch to Meteor 3.0.4
-  mvm alias default 2.12    Set Meteor 2.12 as default
+  mvm install 2.12                    Install Meteor 2.12 from official CDN
+  mvm install 3.0.4                   Install Meteor 3.0.4 from official CDN
+  mvm install --path ~/meteor-2.12-arm64.tar.gz 2.12-arm64
+                                      Install from local tarball
+  mvm install -p ~/Downloads/meteor.tar.gz 2.12-custom
+                                      Install from local tarball
+  mvm use 2.12                        Switch to Meteor 2.12
+  mvm use 3.0.4                       Switch to Meteor 3.0.4
+  mvm alias default 2.12              Set Meteor 2.12 as default
 EOF
 }
 
@@ -101,8 +106,241 @@ mvm_which() {
     fi
 }
 
+# Validate if path contains a valid Meteor installation
+mvm_validate_meteor_path() {
+    local source_path=$1
+    local meteor_exec=""
+    
+    # Check if it's a directory or tar.gz
+    if [ -d "$source_path" ]; then
+        meteor_exec="$source_path/meteor"
+    else
+        echo -e "${RED}Error: Path is not a directory or doesn't exist${NC}"
+        return 1
+    fi
+    
+    # Check for meteor executable
+    if [ ! -f "$meteor_exec" ] && [ ! -f "$source_path/meteor.original" ]; then
+        echo -e "${RED}Error: No meteor executable found${NC}"
+        echo "Expected: $meteor_exec"
+        return 1
+    fi
+    
+    # Check for dev_bundle (extracted or tarball) or .meteor directory
+    if [ ! -d "$source_path/dev_bundle" ] && \
+       [ ! -d "$source_path/.meteor" ] && \
+       ! ls "$source_path"/dev_bundle*.tar.gz >/dev/null 2>&1; then
+        echo -e "${YELLOW}Warning: No dev_bundle or .meteor directory found${NC}"
+        echo "This may not be a complete Meteor installation"
+    fi
+    
+    return 0
+}
+
+# Install from local tarball
+mvm_install_local() {
+    local tarball_path=$1
+    local version_name=$2
+    
+    if [ -z "$tarball_path" ] || [ -z "$version_name" ]; then
+        echo -e "${RED}Error: Both tarball path and version name required${NC}"
+        echo "Usage: mvm install --path <tarball> <version-name>"
+        echo "Example: mvm install --path ~/meteor-2.12.tar.gz 2.12-arm64"
+        return 1
+    fi
+    
+    # Expand tilde and make absolute path
+    tarball_path="${tarball_path/#\~/$HOME}"
+    
+    if [ ! -f "$tarball_path" ]; then
+        echo -e "${RED}Error: Tarball file not found: $tarball_path${NC}"
+        return 1
+    fi
+    
+    mvm_init
+    
+    local version_dir="$MVM_VERSIONS/$version_name"
+    
+    if [ -d "$version_dir" ] && [ -f "$version_dir/meteor" ]; then
+        echo -e "${YELLOW}Meteor $version_name is already installed${NC}"
+        echo "Use 'mvm use $version_name' to activate it"
+        return 0
+    fi
+    
+    echo -e "${BLUE}Installing Meteor $version_name from tarball...${NC}"
+    
+    # Clean up any partial previous install
+    rm -rf "$version_dir"
+    mkdir -p "$version_dir"
+    
+    # Extract tarball
+    echo "📦 Extracting tarball..."
+    local temp_extract=$(mktemp -d)
+    
+    if ! tar -xzf "$tarball_path" -C "$temp_extract" 2>/dev/null; then
+        echo -e "${RED}❌ Failed to extract tarball${NC}"
+        echo "Make sure the file is a valid gzip-compressed tar archive (.tar.gz)"
+        rm -rf "$temp_extract" "$version_dir"
+        return 1
+    fi
+    
+    # Find the meteor installation in extracted contents
+    local source_dir=""
+    
+    # Check if this is an official bootstrap tarball (has .meteor/ at root)
+    if [ -d "$temp_extract/.meteor" ] && [ -x "$temp_extract/.meteor/meteor" ]; then
+        # Official Meteor bootstrap format - the .meteor directory IS the installation
+        source_dir="$temp_extract/.meteor"
+    elif [ -f "$temp_extract/meteor" ] || [ -f "$temp_extract/meteor.original" ]; then
+        # Distribution package format (like community ARM64 builds)
+        source_dir="$temp_extract"
+    else
+        # Look for meteor in subdirectories
+        local found_dir=$(find "$temp_extract" -name "meteor" -type f -o -name "meteor.original" -type f 2>/dev/null | head -1)
+        if [ -n "$found_dir" ]; then
+            source_dir=$(dirname "$found_dir")
+        else
+            echo -e "${RED}❌ Could not find meteor executable in tarball${NC}"
+            rm -rf "$temp_extract" "$version_dir"
+            return 1
+        fi
+    fi
+    
+    # Validate the source
+    if ! mvm_validate_meteor_path "$source_dir"; then
+        rm -rf "$temp_extract" "$version_dir"
+        return 1
+    fi
+    
+    echo "📋 Copying files..."
+    
+    # Copy the entire meteor installation
+    if ! cp -R "$source_dir/"* "$version_dir/"; then
+        echo -e "${RED}❌ Failed to copy files${NC}"
+        rm -rf "$temp_extract" "$version_dir"
+        return 1
+    fi
+    
+    # Clean up temp extraction
+    rm -rf "$temp_extract"
+    
+    # Post-installation setup: Extract compressed dev_bundle if present
+    if ls "$version_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
+        echo "📦 Setting up dev_bundle..."
+        local dev_bundle_tarball=$(ls "$version_dir"/dev_bundle*.tar.gz | head -1)
+        
+        # Create dev_bundle directory
+        mkdir -p "$version_dir/dev_bundle"
+        
+        # Extract the dev_bundle
+        if tar -xzf "$dev_bundle_tarball" -C "$version_dir/dev_bundle" 2>/dev/null; then
+            echo "✓ dev_bundle extracted successfully"
+            # Optionally remove the tarball to save space (comment out to keep it)
+            # rm -f "$dev_bundle_tarball"
+        else
+            echo -e "${RED}❌ Failed to extract dev_bundle${NC}"
+            rm -rf "$version_dir"
+            return 1
+        fi
+    fi
+    
+    # Ensure meteor executable is executable
+    if [ -f "$version_dir/meteor" ]; then
+        chmod +x "$version_dir/meteor"
+    fi
+    if [ -f "$version_dir/meteor.original" ]; then
+        chmod +x "$version_dir/meteor.original"
+    fi
+    
+    # Check binary compatibility
+    echo "🧪 Checking compatibility..."
+    local sys_arch=$(uname -m)
+    local sys_os=$(uname -s)
+    
+    # Check if we can determine the binary type
+    # The meteor script itself is just a shell script, so check the actual node binary
+    local binary_to_check=""
+    local temp_node=""
+    
+    if [ -f "$version_dir/dev_bundle/bin/node" ]; then
+        # dev_bundle already extracted
+        binary_to_check="$version_dir/dev_bundle/bin/node"
+    elif ls "$version_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
+        # dev_bundle is compressed, extract just the node binary for checking
+        local dev_bundle_tarball=$(ls "$version_dir"/dev_bundle*.tar.gz | head -1)
+        temp_node=$(mktemp -d)
+        
+        # Try to extract node binary from tarball
+        if tar -xzf "$dev_bundle_tarball" -C "$temp_node" "./bin/node" 2>/dev/null || \
+           tar -xzf "$dev_bundle_tarball" -C "$temp_node" "bin/node" 2>/dev/null; then
+            if [ -f "$temp_node/bin/node" ]; then
+                binary_to_check="$temp_node/bin/node"
+            elif [ -f "$temp_node/./bin/node" ]; then
+                binary_to_check="$temp_node/./bin/node"
+            fi
+        fi
+    fi
+    
+    local compat_warning=""
+    if [ -n "$binary_to_check" ] && command -v file >/dev/null 2>&1; then
+        local file_output=$(file "$binary_to_check")
+        
+        # Check for OS mismatch
+        if [ "$sys_os" = "Darwin" ] && echo "$file_output" | grep -q "ELF"; then
+            compat_warning="Linux binary on macOS - aborting install because it will NOT work"
+        elif [ "$sys_os" = "Linux" ] && echo "$file_output" | grep -q "Mach-O"; then
+            compat_warning="macOS binary on Linux - aborting install because it will NOT work"
+        fi
+        
+        # Check for architecture mismatch
+        if [ "$sys_arch" = "x86_64" ] && echo "$file_output" | grep -qE "aarch64|ARM"; then
+            compat_warning="${compat_warning:+$compat_warning; }ARM64 binary on x86_64 system"
+        elif [[ "$sys_arch" =~ ^(aarch64|arm64)$ ]] && echo "$file_output" | grep -q "x86-64"; then
+            compat_warning="${compat_warning:+$compat_warning; }x86_64 binary on ARM64 system"
+        fi
+    fi
+    
+    if [ -n "$compat_warning" ]; then
+        echo -e "${RED}❌ Incompatible binary: $compat_warning${NC}"
+        echo "System: $sys_os $sys_arch"
+        echo ""
+        echo "This binary will NOT work on your system."
+        # Clean up temp node dir if we extracted one
+        [ -n "$temp_node" ] && [ -d "$temp_node" ] && rm -rf "$temp_node"
+        rm -rf "$version_dir"
+        return 1
+    else
+        echo -e "${GREEN}✅ Meteor $version_name installed successfully${NC}"
+        echo ""
+        echo "Run 'mvm use $version_name' to start using this version"
+        # Clean up temp node dir if we extracted one
+        [ -n "$temp_node" ] && [ -d "$temp_node" ] && rm -rf "$temp_node"
+    fi
+}
+
 # Install a specific Meteor version
 mvm_install() {
+    # Check for --path or -p flag
+    local use_local_path=false
+    local source_path=""
+    local version=$1
+    
+    if [ "$1" = "--path" ] || [ "$1" = "-p" ]; then
+        use_local_path=true
+        source_path=$2
+        version=$3
+        
+        if [ -z "$source_path" ] || [ -z "$version" ]; then
+            echo -e "${RED}Error: --path requires both path and version name${NC}"
+            echo "Usage: mvm install --path <path> <version-name>"
+            echo "Example: mvm install --path ~/meteor-2.12.tar.gz 2.12-arm64"
+            return 1
+        fi
+        
+        mvm_install_local "$source_path" "$version"
+        return $?
+    fi
+    
     local version=$1
     
     if [ -z "$version" ]; then
@@ -286,8 +524,19 @@ _mvm_update_path() {
     # Add current version to PATH if it exists
     if [ -L "$MVM_CURRENT" ] && [ -d "$MVM_CURRENT" ]; then
         export PATH="$MVM_CURRENT:$PATH"
-        # Set METEOR_WAREHOUSE_DIR so meteor knows where its packages are
-        export METEOR_WAREHOUSE_DIR="$MVM_CURRENT/.meteor"
+        
+        # Set METEOR_WAREHOUSE_DIR based on installation structure
+        # Official bootstrap format has packages/ at root, traditional has .meteor/ directory
+        if [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/package-metadata" ]; then
+            # Official bootstrap format - warehouse IS the current directory
+            export METEOR_WAREHOUSE_DIR="$MVM_CURRENT"
+        elif [ -d "$MVM_CURRENT/.meteor" ]; then
+            # Traditional format - warehouse is in .meteor subdirectory
+            export METEOR_WAREHOUSE_DIR="$MVM_CURRENT/.meteor"
+        else
+            # Fallback to current directory
+            export METEOR_WAREHOUSE_DIR="$MVM_CURRENT"
+        fi
     else
         unset METEOR_WAREHOUSE_DIR
     fi

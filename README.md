@@ -22,16 +22,34 @@ Or with wget:
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/goodeesh/mvm/main/install.sh | bash
-````
+```
 
 ## Usage
 
 ### Install a Meteor version
 
+**From official Meteor CDN:**
+
 ```bash
 mvm install 2.16      # Install Meteor 2.16
 mvm install 3.0.4     # Install Meteor 3.0.4
 ```
+
+**From local tarball:**
+
+Useful for community builds (e.g., Linux ARM64), custom Meteor builds, or offline installation.
+
+```bash
+# Community/custom builds
+mvm install --path ~/meteor-2.12-arm64.tar.gz 2.12-arm64
+
+# Official tarballs (for offline installation)
+# Download from: https://static.meteor.com/packages-bootstrap/VERSION/meteor-bootstrap-PLATFORM.tar.gz
+# Platforms: os.linux.x86_64, os.osx.x86_64, os.osx.arm64
+mvm install -p ~/meteor-bootstrap-os.osx.arm64.tar.gz 2.16-offline
+```
+
+MVM automatically detects incompatible binaries by reading the information of the provided nodejs binary inside the meteor tarball (wrong OS/architecture) and prevents installation.
 
 ### Switch between versions
 
