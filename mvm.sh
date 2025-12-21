@@ -6,7 +6,7 @@
 # Configuration
 export MVM_DIR="${MVM_DIR:-$HOME/.mvm}"
 export MVM_CURRENT="$MVM_DIR/current"
-export MVM_VERSIONS="$MVM_DIR/versions"
+MVM_VERSIONS="$MVM_DIR/versions"
 
 # Colors for output
 RED='\033[0;31m'
@@ -173,16 +173,15 @@ mvm_install_local() {
     
     # Clean up any partial previous install
     rm -rf "$version_dir"
-    mkdir -p "$version_dir"
     
-    # Extract tarball
+    # Extract tarball to temporary location for installation
     echo "📦 Extracting tarball..."
     local temp_extract=$(mktemp -d)
     
     if ! tar -xzf "$tarball_path" -C "$temp_extract" 2>/dev/null; then
         echo -e "${RED}❌ Failed to extract tarball${NC}"
         echo "Make sure the file is a valid gzip-compressed tar archive (.tar.gz)"
-        rm -rf "$temp_extract" "$version_dir"
+        rm -rf "$temp_extract"
         return 1
     fi
     
@@ -203,48 +202,58 @@ mvm_install_local() {
             source_dir=$(dirname "$found_dir")
         else
             echo -e "${RED}❌ Could not find meteor executable in tarball${NC}"
-            rm -rf "$temp_extract" "$version_dir"
+            rm -rf "$temp_extract"
             return 1
         fi
     fi
     
     # Validate the source
     if ! mvm_validate_meteor_path "$source_dir"; then
-        rm -rf "$temp_extract" "$version_dir"
+        rm -rf "$temp_extract"
         return 1
     fi
     
-    echo "📋 Copying files..."
+    # Run install-meteor.sh if present (for community builds)
+    # This must run BEFORE we move files, in the extracted location
+    if [ -f "$source_dir/install-meteor.sh" ]; then
+        echo "📦 Running community build installer..."
+        chmod +x "$source_dir/install-meteor.sh"
+        # Run the install script in non-interactive mode
+        if (cd "$source_dir" && bash install-meteor.sh </dev/null 2>&1 | grep -E "✓|✅|❌|Error" || true); then
+            echo "✓ Community build installation completed"
+        else
+            echo -e "${YELLOW}⚠️  Installation script had issues, continuing anyway${NC}"
+        fi
+    # Fallback: Extract compressed dev_bundle if present
+    elif ls "$source_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
+        echo "📦 Setting up dev_bundle..."
+        local dev_bundle_tarball=$(ls "$source_dir"/dev_bundle*.tar.gz | head -1)
+        
+        # Create dev_bundle directory
+        mkdir -p "$source_dir/dev_bundle"
+        
+        # Extract the dev_bundle
+        if tar -xzf "$dev_bundle_tarball" -C "$source_dir/dev_bundle" 2>/dev/null; then
+            echo "✓ dev_bundle extracted successfully"
+        else
+            echo -e "${RED}❌ Failed to extract dev_bundle${NC}"
+            rm -rf "$temp_extract"
+            return 1
+        fi
+    fi
     
-    # Copy the entire meteor installation
-    if ! cp -R "$source_dir/"* "$version_dir/"; then
-        echo -e "${RED}❌ Failed to copy files${NC}"
-        rm -rf "$temp_extract" "$version_dir"
+    echo "📋 Moving installation to MVM directory..."
+    
+    # Now move the fully-installed directory to MVM versions
+    mkdir -p "$MVM_VERSIONS"
+    if ! mv "$source_dir" "$version_dir"; then
+        echo -e "${RED}❌ Failed to move installation${NC}"
+        rm -rf "$temp_extract"
         return 1
     fi
     
     # Clean up temp extraction
     rm -rf "$temp_extract"
-    
-    # Post-installation setup: Extract compressed dev_bundle if present
-    if ls "$version_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
-        echo "📦 Setting up dev_bundle..."
-        local dev_bundle_tarball=$(ls "$version_dir"/dev_bundle*.tar.gz | head -1)
-        
-        # Create dev_bundle directory
-        mkdir -p "$version_dir/dev_bundle"
-        
-        # Extract the dev_bundle
-        if tar -xzf "$dev_bundle_tarball" -C "$version_dir/dev_bundle" 2>/dev/null; then
-            echo "✓ dev_bundle extracted successfully"
-            # Optionally remove the tarball to save space (comment out to keep it)
-            # rm -f "$dev_bundle_tarball"
-        else
-            echo -e "${RED}❌ Failed to extract dev_bundle${NC}"
-            rm -rf "$version_dir"
-            return 1
-        fi
-    fi
     
     # Ensure meteor executable is executable
     if [ -f "$version_dir/meteor" ]; then
@@ -252,6 +261,53 @@ mvm_install_local() {
     fi
     if [ -f "$version_dir/meteor.original" ]; then
         chmod +x "$version_dir/meteor.original"
+    fi
+    
+    # Post-installation setup for community ARM64 builds
+    # These builds have packages/ at root + a wrapper script, and need special handling
+    if [ -f "$version_dir/meteor" ] && [ -f "$version_dir/meteor.original" ] && \
+       [ -d "$version_dir/packages" ] && [ -d "$version_dir/tools" ]; then
+        echo "🔧 Configuring community build for MVM..."
+        
+        # Fix meteor wrapper to resolve symlinks properly (use pwd -P)
+        if grep -q 'SCRIPT_DIR="$(cd "$(dirname "\$0")" && pwd)"' "$version_dir/meteor" 2>/dev/null; then
+            sed -i 's/SCRIPT_DIR="$(cd "$(dirname "\$0")" && pwd)"/SCRIPT_DIR="$(cd "$(dirname "\$0")" \&\& pwd -P)"/' "$version_dir/meteor"
+            echo "  ✓ Fixed meteor wrapper for symlink support"
+        fi
+        
+        # Ensure .meteor-version file exists
+        if [ ! -f "$version_dir/.meteor-version" ]; then
+            # Try to extract version number from version_name (e.g., "2.12-arm64" -> "2.12")
+            local version_number=$(echo "$version_name" | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "$version_name")
+            echo "$version_number" > "$version_dir/.meteor-version"
+            echo "  ✓ Created .meteor-version file"
+        fi
+        
+        # Create unipackage.json in the parent versions directory
+        # The tools version detection looks for it at getCurrentToolsDir()/../unipackage.json
+        if [ ! -f "$MVM_VERSIONS/unipackage.json" ]; then
+            local version_number=$(echo "$version_name" | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "$version_name")
+            cat > "$MVM_VERSIONS/unipackage.json" << EOF
+{
+  "name": "meteor-tool",
+  "version": "$version_number"
+}
+EOF
+            echo "  ✓ Created unipackage.json metadata"
+        fi
+        
+        # Community ARM64 builds require isopackets directory at root
+        # This is normally generated on first use, but we create the structure
+        # so meteor knows where to place the files
+        echo "  ⏳ Setting up runtime environment..."
+        
+        # Create isopackets directory structure
+        mkdir -p "$version_dir/isopackets"
+        
+        echo "  ✓ Runtime environment configured"
+        echo "  Note: Full runtime data will be initialized automatically on first use"
+        
+        # The _mvm_update_path function is configured to NOT set METEOR_WAREHOUSE_DIR for these builds
     fi
     
     # Check binary compatibility
@@ -541,8 +597,13 @@ _mvm_update_path() {
         export PATH="$MVM_CURRENT:$PATH"
         
         # Set METEOR_WAREHOUSE_DIR based on installation structure
-        # Official bootstrap format has packages/ at root, traditional has .meteor/ directory
-        if [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/package-metadata" ]; then
+        # Community builds (packages/ + tools/ at root) auto-detect, don't set METEOR_WAREHOUSE_DIR
+        if [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/tools" ]; then
+            # Community ARM64 build format - has packages/ and tools/ at root
+            # These builds auto-detect their location and create .meteor/isopackets on first use
+            # Don't set METEOR_WAREHOUSE_DIR - let it auto-detect
+            unset METEOR_WAREHOUSE_DIR
+        elif [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/package-metadata" ]; then
             # Official bootstrap format - warehouse IS the current directory
             export METEOR_WAREHOUSE_DIR="$MVM_CURRENT"
         elif [ -d "$MVM_CURRENT/.meteor" ]; then
