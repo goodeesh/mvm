@@ -51,6 +51,23 @@ mvm install -p ~/meteor-bootstrap-os.osx.arm64.tar.gz 2.16-offline
 
 MVM automatically detects incompatible binaries by reading the information of the provided nodejs binary inside the meteor tarball (wrong OS/architecture) and prevents installation.
 
+**Link an existing Meteor installation:**
+
+Perfect for custom builds or Meteor installations in non-standard locations.
+
+```bash
+# Link a custom ARM64 build
+mvm link /home/user/meteor-2.12-arm64 2.12-arm64
+
+# Link a system-wide installation
+mvm link /opt/meteor 2.16-system
+
+# Link a development build
+mvm link ~/projects/meteor-custom-build 3.0-custom
+```
+
+Linked installations are managed by mvm but the original files remain in their location. Updates to the original directory are reflected immediately.
+
 ### Switch between versions
 
 ```bash
@@ -78,6 +95,12 @@ mvm current           # Show current version
 
 ```bash
 mvm uninstall 2.16    # Remove Meteor 2.16
+```
+
+### Unlink a linked version
+
+```bash
+mvm unlink 2.12-arm64 # Remove link (original files untouched)
 ```
 
 ### Other commands

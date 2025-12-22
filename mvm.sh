@@ -29,12 +29,14 @@ Meteor Version Manager (MVM)
 Usage:
   mvm install <version>               Install a specific Meteor version (e.g., 2.12, 3.0)
   mvm install --path <tarball> <name> Install from local tarball
+  mvm link <path> <name>              Link an existing Meteor installation
   mvm use <version>                   Switch to a specific Meteor version
   mvm auto                            Auto-detect and switch to project's Meteor version
   mvm check                           Check if current version matches project
   mvm list                            List all installed Meteor versions
   mvm current                         Show currently active Meteor version
   mvm uninstall <version>             Remove a specific Meteor version
+  mvm unlink <version>                Unlink a linked Meteor installation
   mvm which                           Show path to current Meteor installation
   mvm alias <name> <ver>              Create an alias (e.g., mvm alias default 2.12)
   mvm help                            Show this help message
@@ -46,6 +48,8 @@ Examples:
                                       Install from local tarball
   mvm install -p ~/Downloads/meteor.tar.gz 2.12-custom
                                       Install from local tarball
+  mvm link ~/custom-meteor/2.12-arm64 2.12-arm64
+                                      Link existing Meteor installation
   mvm use 2.12                        Switch to Meteor 2.12
   mvm use 3.0.4                       Switch to Meteor 3.0.4
   mvm alias default 2.12              Set Meteor 2.12 as default
@@ -106,6 +110,44 @@ mvm_which() {
     fi
 }
 
+# Validate if path contains a working Meteor installation (for link command)
+mvm_validate_linked_path() {
+    local source_path=$1
+    
+    # Expand tilde and make absolute path
+    source_path="${source_path/#\~/$HOME}"
+    
+    # Check path exists and is a directory
+    if [ ! -d "$source_path" ]; then
+        echo -e "${RED}Error: Path doesn't exist or is not a directory${NC}"
+        return 1
+    fi
+    
+    # Check for meteor executable
+    if [ ! -f "$source_path/meteor" ]; then
+        echo -e "${RED}Error: No 'meteor' executable found in $source_path${NC}"
+        return 1
+    fi
+    
+    # Check if it's executable
+    if [ ! -x "$source_path/meteor" ]; then
+        echo -e "${RED}Error: meteor file exists but is not executable${NC}"
+        echo "Try: chmod +x $source_path/meteor"
+        return 1
+    fi
+    
+    # Test if meteor actually runs
+    echo "🧪 Testing meteor executable..."
+    if "$source_path/meteor" --version >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Valid Meteor installation${NC}"
+        return 0
+    else
+        echo -e "${RED}Error: meteor executable doesn't run properly${NC}"
+        echo "Test it yourself: $source_path/meteor --version"
+        return 1
+    fi
+}
+
 # Validate if path contains a valid Meteor installation
 mvm_validate_meteor_path() {
     local source_path=$1
@@ -137,6 +179,94 @@ mvm_validate_meteor_path() {
     fi
     
     return 0
+}
+
+# Link an existing Meteor installation
+mvm_link() {
+    local source_path=$1
+    local version_name=$2
+    
+    if [ -z "$source_path" ] || [ -z "$version_name" ]; then
+        echo -e "${RED}Error: Both path and version name required${NC}"
+        echo "Usage: mvm link <path> <version-name>"
+        echo "Example: mvm link /home/user/meteor-2.12-arm64 2.12-arm64"
+        return 1
+    fi
+    
+    # Expand tilde and make absolute path
+    source_path="${source_path/#\~/$HOME}"
+    
+    # Validate the Meteor installation
+    if ! mvm_validate_linked_path "$source_path"; then
+        return 1
+    fi
+    
+    mvm_init
+    
+    local version_dir="$MVM_VERSIONS/$version_name"
+    
+    if [ -e "$version_dir" ]; then
+        if [ -L "$version_dir" ]; then
+            echo -e "${YELLOW}Version $version_name is already linked${NC}"
+            echo "Linked to: $(readlink "$version_dir")"
+        else
+            echo -e "${YELLOW}Version $version_name already exists (not a link)${NC}"
+        fi
+        echo "Use 'mvm unlink $version_name' first to replace it"
+        return 0
+    fi
+    
+    echo -e "${BLUE}Linking Meteor $version_name...${NC}"
+    
+    # Create symlink
+    if ln -s "$source_path" "$version_dir"; then
+        echo -e "${GREEN}✅ Meteor $version_name linked successfully${NC}"
+        echo "Linked: $version_dir -> $source_path"
+        echo ""
+        echo "Run 'mvm use $version_name' to start using this version"
+        return 0
+    else
+        echo -e "${RED}❌ Failed to create symlink${NC}"
+        return 1
+    fi
+}
+
+# Unlink a linked Meteor installation
+mvm_unlink() {
+    local version=$1
+    
+    if [ -z "$version" ]; then
+        echo -e "${RED}Error: Version name required${NC}"
+        echo "Usage: mvm unlink <version-name>"
+        return 1
+    fi
+    
+    local version_dir="$MVM_VERSIONS/$version"
+    
+    if [ ! -e "$version_dir" ]; then
+        echo -e "${RED}Meteor $version is not installed or linked${NC}"
+        return 1
+    fi
+    
+    if [ ! -L "$version_dir" ]; then
+        echo -e "${RED}Error: $version is not a linked installation${NC}"
+        echo "Use 'mvm uninstall $version' to remove regular installations"
+        return 1
+    fi
+    
+    local current_version=$(mvm_current_version)
+    if [ "$version" = "$current_version" ]; then
+        echo -e "${YELLOW}Warning: Unlinking currently active version${NC}"
+        rm -f "$MVM_CURRENT"
+        _mvm_update_path
+    fi
+    
+    local link_target=$(readlink "$version_dir")
+    echo "Unlinking Meteor $version..."
+    echo "(Original installation at $link_target will not be affected)"
+    
+    rm -f "$version_dir"
+    echo -e "${GREEN}✅ Meteor $version unlinked${NC}"
 }
 
 # Install from local tarball
@@ -687,6 +817,9 @@ mvm() {
         install)
             mvm_install "$@"
             ;;
+        link)
+            mvm_link "$@"
+            ;;
         use)
             mvm_use "$@"
             ;;
@@ -707,6 +840,9 @@ mvm() {
             ;;
         uninstall)
             mvm_uninstall "$@"
+            ;;
+        unlink)
+            mvm_unlink "$@"
             ;;
         alias)
             mvm_alias "$@"
