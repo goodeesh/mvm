@@ -42,9 +42,9 @@ Usage:
 Examples:
   mvm install 2.12                    Install Meteor 2.12 from official CDN
   mvm install 3.0.4                   Install Meteor 3.0.4 from official CDN
-  mvm install --path ~/meteor-bootstrap.tar.gz 2.16
+  mvm install --path ~/meteor-2.12-arm64.tar.gz 2.12-arm64
                                       Install from local tarball
-  mvm install -p ~/Downloads/meteor.tar.gz 3.0.4-offline
+  mvm install -p ~/Downloads/meteor.tar.gz 2.12-custom
                                       Install from local tarball
   mvm use 2.12                        Switch to Meteor 2.12
   mvm use 3.0.4                       Switch to Meteor 3.0.4
@@ -213,8 +213,19 @@ mvm_install_local() {
         return 1
     fi
     
-    # Extract compressed dev_bundle if present
-    if ls "$source_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
+    # Run install-meteor.sh if present (for community builds)
+    # This must run BEFORE we move files, in the extracted location
+    if [ -f "$source_dir/install-meteor.sh" ]; then
+        echo "📦 Running community build installer..."
+        chmod +x "$source_dir/install-meteor.sh"
+        # Run the install script in non-interactive mode
+        if (cd "$source_dir" && bash install-meteor.sh </dev/null 2>&1 | grep -E "✓|✅|❌|Error" || true); then
+            echo "✓ Community build installation completed"
+        else
+            echo -e "${YELLOW}⚠️  Installation script had issues, continuing anyway${NC}"
+        fi
+    # Fallback: Extract compressed dev_bundle if present
+    elif ls "$source_dir"/dev_bundle*.tar.gz >/dev/null 2>&1; then
         echo "📦 Setting up dev_bundle..."
         local dev_bundle_tarball=$(ls "$source_dir"/dev_bundle*.tar.gz | head -1)
         
@@ -250,6 +261,53 @@ mvm_install_local() {
     fi
     if [ -f "$version_dir/meteor.original" ]; then
         chmod +x "$version_dir/meteor.original"
+    fi
+    
+    # Post-installation setup for community ARM64 builds
+    # These builds have packages/ at root + a wrapper script, and need special handling
+    if [ -f "$version_dir/meteor" ] && [ -f "$version_dir/meteor.original" ] && \
+       [ -d "$version_dir/packages" ] && [ -d "$version_dir/tools" ]; then
+        echo "🔧 Configuring community build for MVM..."
+        
+        # Fix meteor wrapper to resolve symlinks properly (use pwd -P)
+        if grep -q 'SCRIPT_DIR="$(cd "$(dirname "\$0")" && pwd)"' "$version_dir/meteor" 2>/dev/null; then
+            sed -i 's/SCRIPT_DIR="$(cd "$(dirname "\$0")" && pwd)"/SCRIPT_DIR="$(cd "$(dirname "\$0")" \&\& pwd -P)"/' "$version_dir/meteor"
+            echo "  ✓ Fixed meteor wrapper for symlink support"
+        fi
+        
+        # Ensure .meteor-version file exists
+        if [ ! -f "$version_dir/.meteor-version" ]; then
+            # Try to extract version number from version_name (e.g., "2.12-arm64" -> "2.12")
+            local version_number=$(echo "$version_name" | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "$version_name")
+            echo "$version_number" > "$version_dir/.meteor-version"
+            echo "  ✓ Created .meteor-version file"
+        fi
+        
+        # Create unipackage.json in the parent versions directory
+        # The tools version detection looks for it at getCurrentToolsDir()/../unipackage.json
+        if [ ! -f "$MVM_VERSIONS/unipackage.json" ]; then
+            local version_number=$(echo "$version_name" | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "$version_name")
+            cat > "$MVM_VERSIONS/unipackage.json" << EOF
+{
+  "name": "meteor-tool",
+  "version": "$version_number"
+}
+EOF
+            echo "  ✓ Created unipackage.json metadata"
+        fi
+        
+        # Community ARM64 builds require isopackets directory at root
+        # This is normally generated on first use, but we create the structure
+        # so meteor knows where to place the files
+        echo "  ⏳ Setting up runtime environment..."
+        
+        # Create isopackets directory structure
+        mkdir -p "$version_dir/isopackets"
+        
+        echo "  ✓ Runtime environment configured"
+        echo "  Note: Full runtime data will be initialized automatically on first use"
+        
+        # The _mvm_update_path function is configured to NOT set METEOR_WAREHOUSE_DIR for these builds
     fi
     
     # Check binary compatibility
@@ -539,7 +597,13 @@ _mvm_update_path() {
         export PATH="$MVM_CURRENT:$PATH"
         
         # Set METEOR_WAREHOUSE_DIR based on installation structure
-        if [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/package-metadata" ]; then
+        # Community builds (packages/ + tools/ at root) auto-detect, don't set METEOR_WAREHOUSE_DIR
+        if [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/tools" ]; then
+            # Community ARM64 build format - has packages/ and tools/ at root
+            # These builds auto-detect their location and create .meteor/isopackets on first use
+            # Don't set METEOR_WAREHOUSE_DIR - let it auto-detect
+            unset METEOR_WAREHOUSE_DIR
+        elif [ -d "$MVM_CURRENT/packages" ] && [ -d "$MVM_CURRENT/package-metadata" ]; then
             # Official bootstrap format - warehouse IS the current directory
             export METEOR_WAREHOUSE_DIR="$MVM_CURRENT"
         elif [ -d "$MVM_CURRENT/.meteor" ]; then
