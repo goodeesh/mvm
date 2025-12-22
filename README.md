@@ -37,16 +37,14 @@ mvm install 3.0.4     # Install Meteor 3.0.4
 
 **From local tarball:**
 
-Useful for community builds (e.g., Linux ARM64), custom Meteor builds, or offline installation.
+Useful for offline installation or custom Meteor builds.
 
 ```bash
-# Community/custom builds
-mvm install --path ~/meteor-2.12-arm64.tar.gz 2.12-arm64
-
 # Official tarballs (for offline installation)
 # Download from: https://static.meteor.com/packages-bootstrap/VERSION/meteor-bootstrap-PLATFORM.tar.gz
 # Platforms: os.linux.x86_64, os.osx.x86_64, os.osx.arm64
-mvm install -p ~/meteor-bootstrap-os.osx.arm64.tar.gz 2.16-offline
+mvm install --path ~/meteor-bootstrap-os.osx.arm64.tar.gz 2.16
+mvm install -p ~/Downloads/meteor.tar.gz 3.0.4-offline
 ```
 
 MVM automatically detects incompatible binaries by reading the information of the provided nodejs binary inside the meteor tarball (wrong OS/architecture) and prevents installation.
